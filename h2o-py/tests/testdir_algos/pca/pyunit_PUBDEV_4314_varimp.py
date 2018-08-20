@@ -22,15 +22,18 @@ def pca_pubdev_4314():
     print("PCA with k = 3, retx = FALSE, transform = 'STANDARDIZE'")
     fitPCA = H2OPCA(k=3, transform="StANDARDIZE", pca_method="GramSVD")
     fitPCA.train(x=list(range(0,8)), training_frame=prostate)
+    print("Model summary:")
     print(fitPCA.summary())
     varimpPandas = fitPCA.varimp(use_pandas=True)
     assert_is_type(varimpPandas, DataFrame)
     varimpList = fitPCA.varimp()
+    print("Variable importances (as list):")
     print(varimpList)
     assert_is_type(varimpList, list)
+    assert_is_type(varimpList, [tuple])
     sys.stdout.flush()
 
 if __name__ == "__main__":
-    pyunit_utils.standalone_test(pca_pubdev_4314())
+    pyunit_utils.standalone_test(pca_pubdev_4314)
 else:
     pca_pubdev_4314()
