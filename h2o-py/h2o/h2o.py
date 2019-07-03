@@ -149,7 +149,7 @@ def version_check():
 def init(url=None, ip=None, port=None, name=None, https=None, insecure=None, username=None, password=None,
          cookies=None, proxy=None, start_h2o=True, nthreads=-1, ice_root=None, log_dir=None, log_level=None,
          enable_assertions=True, max_mem_size=None, min_mem_size=None, strict_version_check=None, ignore_config=False,
-         extra_classpath=None, jvm_custom_args=None, bind_to_localhost=True, **kwargs):
+         extra_classpath=None, jvm_custom_args=None, bind_to_localhost=True, quiet=False, **kwargs):
     """
     Attempt to connect to a local server, or if not successful start a new server and connect to it.
 
@@ -176,6 +176,7 @@ def init(url=None, ip=None, port=None, name=None, https=None, insecure=None, use
     :param strict_version_check: If True, an error will be raised if the client and server versions don't match.
     :param ignore_config: Indicates whether a processing of a .h2oconfig file should be conducted or not. Default value is False.
     :param extra_classpath: List of paths to libraries that should be included on the Java classpath when starting H2O from Python.
+    :param quiet: If True, the connection will not show connection status messages. Default value is False.
     :param kwargs: (all other deprecated attributes)
     :param jvm_custom_args: Customer, user-defined argument's for the JVM H2O is instantiated in. Ignored if there is an instance of H2O already running and the client connects to it.
     """
@@ -203,6 +204,7 @@ def init(url=None, ip=None, port=None, name=None, https=None, insecure=None, use
     assert_is_type(extra_classpath, [str], None)
     assert_is_type(jvm_custom_args, [str], None)
     assert_is_type(bind_to_localhost, bool)
+    assert_is_type(quiet, bool)
     assert_is_type(kwargs, {"proxies": {str: str}, "max_mem_size_GB": int, "min_mem_size_GB": int,
                             "force_connect": bool, "as_port": bool})
 
@@ -257,13 +259,13 @@ def init(url=None, ip=None, port=None, name=None, https=None, insecure=None, use
             else:
                 verify_ssl_certificates = not insecure
 
-    if not start_h2o:
+    if not start_h2o and not quiet:
         print("Warning: if you don't want to start local H2O server, then use of `h2o.connect()` is preferred.")
     try:
         h2oconn = H2OConnection.open(url=url, ip=ip, port=port, name=name, https=https,
                                      verify_ssl_certificates=verify_ssl_certificates,
-                                     auth=auth, proxy=proxy,cookies=cookies, verbose=True,
-                                     _msgs=("Checking whether there is an H2O instance running at {url} ",
+                                     auth=auth, proxy=proxy,cookies=cookies, verbose=not quiet,
+                                     _msgs=("Checking whether there is an H2O instance running at {url}",
                                             "connected.", "not found."))
     except H2OConnectionError:
         # Backward compatibility: in init() port parameter really meant "baseport" when starting a local server...
@@ -276,13 +278,13 @@ def init(url=None, ip=None, port=None, name=None, https=None, insecure=None, use
                                   min_mem_size=mmin, ice_root=ice_root, log_dir=log_dir, log_level=log_level,
                                   port=port, name=name,
                                   extra_classpath=extra_classpath, jvm_custom_args=jvm_custom_args,
-                                  bind_to_localhost=bind_to_localhost)
+                                  bind_to_localhost=bind_to_localhost, verbose=not quiet)
         h2oconn = H2OConnection.open(server=hs, https=https, verify_ssl_certificates=not insecure,
-                                     auth=auth, proxy=proxy,cookies=cookies, verbose=True)
+                                     auth=auth, proxy=proxy,cookies=cookies, verbose=not quiet)
     if check_version:
         version_check()
     h2oconn.cluster.timezone = "UTC"
-    h2oconn.cluster.show_status()
+    if not quiet: h2oconn.cluster.show_status()
 
 def lazy_import(path, pattern=None):
     """
