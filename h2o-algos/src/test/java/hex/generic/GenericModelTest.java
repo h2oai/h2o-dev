@@ -29,6 +29,7 @@ import water.runner.H2ORunner;
 
 import java.io.*;
 import java.util.ArrayList;
+import java.util.Arrays;
 
 import static hex.genmodel.utils.DistributionFamily.AUTO;
 import static org.junit.Assert.*;
@@ -756,16 +757,25 @@ public class GenericModelTest extends TestUtil {
     
     @Test
     public void testJavaScoring_mojo_cox_ph_categorical() throws IOException {
-        try {
-            Scope.enter();
-            final Frame trainingFrame = parse_test_file("./smalldata/coxph_test/heart.csv").toCategoricalCol("transplant");
-            Scope.track(trainingFrame);
-            final Frame testFrame = parse_test_file("./smalldata/coxph_test/heart_test.csv").toCategoricalCol("transplant");
-            Scope.track(testFrame);
-            testJavaScoringCoxPH(trainingFrame, testFrame, new String[0]);
-        } finally {
-            Scope.exit();
+        for (int i = 0; i < 10000; i++) {
+
+            System.out.println("====================================================================");
+            System.out.println("====================================================================");
+            System.out.println("====================================================================");
+            System.out.println("====================================================================");
+            System.out.println(">>>>>>>>. " + i);
+            try {
+                Scope.enter();
+                final Frame trainingFrame = parse_test_file("./smalldata/coxph_test/heart.csv").toCategoricalCol("transplant");
+                Scope.track(trainingFrame);
+                final Frame testFrame = parse_test_file("./smalldata/coxph_test/heart_test.csv").toCategoricalCol("transplant");
+                Scope.track(testFrame);
+                testJavaScoringCoxPH(trainingFrame, testFrame, new String[0]);
+            } finally {
+                Scope.exit();
+            }
         }
+    
     }
  
     @Test
@@ -814,9 +824,15 @@ public class GenericModelTest extends TestUtil {
         parms._ignored_columns = new String[]{"id"};
         parms._stratify_by = stratifyBy;
         parms._use_all_factor_levels = true;
+//        parms._ties = CoxPHModel.CoxPHParameters.CoxPHTies.breslow;
+//        parms._single_node_mode = true;
 
         CoxPH job = new CoxPH(parms);
         final CoxPHModel originalModel = job.trainModel().get();
+
+        System.out.println("originalModel._output._coef = " + Arrays.toString(originalModel._output._coef));
+        System.out.println("originalModel._output._coef_names = " + Arrays.toString(originalModel._output._coef_names));
+        
         Scope.track_generic(originalModel);
 
         // FIXME: for debugging issues on jenkins
@@ -836,6 +852,9 @@ public class GenericModelTest extends TestUtil {
         final GenericModel genericModel = trainAndCheck(generic);
         Scope.track_generic(genericModel);
 
+        System.out.println("genericModelParameters = " + genericModelParameters);
+        System.out.println("originalModel._input_parm = " + originalModel._input_parms);
+
         final Frame genericModelPredictions = genericModel.score(testFrame);
         Scope.track_generic(genericModelPredictions);
         assertEquals(testFrame.numRows(), genericModelPredictions.numRows());
@@ -843,8 +862,24 @@ public class GenericModelTest extends TestUtil {
         final boolean equallyScored = genericModel.testJavaScoring(testFrame, genericModelPredictions, 0);
         assertTrue(equallyScored);
 
+        System.out.println("originalModel = " + originalModel);
+        System.out.println("genericModel = " + genericModel);
+
         final Frame originalModelPredictions = originalModel.score(testFrame);
         Scope.track(originalModelPredictions);
+        System.out.println("originalModelPredictions = " + originalModelPredictions);
+        for (int i = 0; i < originalModelPredictions.numCols(); i++) {
+            System.out.println("---------------------------------------------");
+            System.out.println("vec " + i);
+            
+            for (long j = 0; j < originalModelPredictions.numRows() && j < 10; j++) {
+                final double orig = originalModelPredictions.vec(i).at(j);
+                final double gene = genericModelPredictions.vec(i).at(j);
+                final boolean b = Math.abs(orig - gene) < 0.00000001;
+                System.out.println("" + b + " originalModelPredictions("+ j + ") = " + orig
+                        + ", genericModelPredictions("+ j + ") = " + gene);
+            }
+        }
         assertTrue(TestUtil.compareFrames(originalModelPredictions, genericModelPredictions, 0.000001, 0.00001));
     }
     

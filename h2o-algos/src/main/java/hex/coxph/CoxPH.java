@@ -606,6 +606,8 @@ public class CoxPH extends ModelBuilder<CoxPHModel,CoxPHModel.CoxPHParameters,Co
           iterTimer = new Timer();
           model._output._iter = i;
 
+          System.out.println("i = " + i + " model._output._coef = " + Arrays.toString(model._output._coef));
+
           Timer aggregTimer = new Timer();
           coxMR = new CoxPHTask(dinfo, newCoef, time, (long) response().min() /* min event */,
                   n_offsets, has_start_column, dinfo._adaptedFrame.vec(_parms._strata_column), has_weights_column,
@@ -622,7 +624,10 @@ public class CoxPH extends ModelBuilder<CoxPHModel,CoxPHModel.CoxPHParameters,Co
             if (i == 0)
               calcCounts(model, coxMR);
 
+            System.out.println("before calcModelStats newCoef = " + Arrays.toString(newCoef));
+
             calcModelStats(model, newCoef, cs);
+            System.out.println("after calcModelStats newCoef = " + Arrays.toString(newCoef));
 
             if (newLoglik == 0)
               model._output._lre = -Math.log10(Math.abs(logLik - newLoglik));
@@ -630,6 +635,9 @@ public class CoxPH extends ModelBuilder<CoxPHModel,CoxPHModel.CoxPHParameters,Co
               model._output._lre = -Math.log10(Math.abs((logLik - newLoglik) / newLoglik));
             if (model._output._lre >= model._parms._lre_min)
               break;
+
+            System.out.println("model._output._var_coef = " + Arrays.deepToString(model._output._var_coef));
+            System.out.println("cs._gradient = " + Arrays.toString(cs._gradient));
 
             Arrays.fill(step, 0);
             for (int j = 0; j < n_coef; ++j)
@@ -648,6 +656,8 @@ public class CoxPH extends ModelBuilder<CoxPHModel,CoxPHModel.CoxPHParameters,Co
 
           for (int j = 0; j < n_coef; ++j)
             newCoef[j] = oldCoef[j] - step[j];
+
+          System.out.println("newCoef = " + Arrays.toString(newCoef));
 
           model.update(_job);
           _job.update(1, "Iteration = " + i + "/" + model._parms._max_iterations + ", logLik = " + logLik);
