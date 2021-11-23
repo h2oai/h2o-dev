@@ -77,11 +77,12 @@ h2o.grid <- function(algorithm,
     warning("Parameter is_supervised is deprecated. It is not possible to override default behaviour.")
   }
   #Unsupervised algos to account for in grid (these algos do not need response)
-  unsupervised_algos <- c("kmeans", "pca", "svd", "glrm", "extendedisolationforest")
+  unsupervised_algos <- c("kmeans", "pca", "svd", "glrm", "isolationforest", "extendedisolationforest")
+  forceSupervisedBehaviour <- if (!is.null(is_supervised)) is_supervised else FALSE
   # Parameter list
   dots <- list(...)
   # Add x, y, and training_frame
-  if(!(algorithm %in% c(unsupervised_algos, toupper(unsupervised_algos)))) {
+  if(!(algorithm %in% c(unsupervised_algos, toupper(unsupervised_algos))) || forceSupervisedBehaviour) {
     if(!missing(y)) {
       dots$y <- y
     } else {
@@ -97,7 +98,7 @@ h2o.grid <- function(algorithm,
     stop("Must specify training frame, training_frame")
   }
   # If x is missing, then assume user wants to use all columns as features for supervised models only
-  if(!(algorithm %in% c(unsupervised_algos, toupper(unsupervised_algos)))) {
+  if(!(algorithm %in% c(unsupervised_algos, toupper(unsupervised_algos))) || forceSupervisedBehaviour) {
     if (missing(x)) {
       if (is.numeric(y)) {
         dots$x <- setdiff(col(training_frame), y)
