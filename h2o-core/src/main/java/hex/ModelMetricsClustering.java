@@ -6,6 +6,7 @@ import water.Key;
 import water.exceptions.H2OIllegalArgumentException;
 import water.fvec.Frame;
 import water.util.ArrayUtils;
+import water.util.ComparisonUtils;
 import water.util.TwoDimTable;
 
 import java.util.ArrayList;
@@ -41,6 +42,20 @@ public class ModelMetricsClustering extends ModelMetricsUnsupervised {
     if (_size != null) sb.append(" per cluster sizes: " + Arrays.toString(_size) + "\n");
     if (_withinss != null) sb.append(" per cluster within sum of squares: " + Arrays.toString(_withinss) + "\n");
     return sb.toString();
+  }
+
+  @Override
+  public boolean isEqualUpToTolerance(ComparisonUtils.MetricComparator comparator, ModelMetrics other) {
+    super.isEqualUpToTolerance(comparator, other);
+    ModelMetricsClustering specificOther = (ModelMetricsClustering) other;
+
+    comparator.compareUpToTolerance("totss", this.totss(), specificOther.totss());
+    comparator.compareUpToTolerance("tot_withinss", this.tot_withinss(), specificOther.tot_withinss());
+    comparator.compareUpToTolerance("betweenss", this.betweenss(), specificOther.betweenss());
+    comparator.compare("size", this._size, specificOther._size);
+    comparator.compareUpToTolerance("withinss", this._withinss, specificOther._withinss);
+            
+    return comparator.isEqual();
   }
 
   /**

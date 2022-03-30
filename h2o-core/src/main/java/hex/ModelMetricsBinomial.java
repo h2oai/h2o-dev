@@ -10,6 +10,7 @@ import water.fvec.Chunk;
 import water.fvec.Frame;
 import water.fvec.Vec;
 import water.util.ArrayUtils;
+import water.util.ComparisonUtils;
 import water.util.Log;
 import water.util.MathUtils;
 
@@ -79,7 +80,25 @@ public class ModelMetricsBinomial extends ModelMetricsSupervised {
   public double aucpr() { return auc_obj()._pr_auc; } // for compatibility with naming in ScoreKeeper.StoppingMetric annotation
   public double lift_top_group() { return gainsLift().response_rates[0] / gainsLift().avg_response_rate; }
 
-  /**
+  @Override
+  public boolean isEqualUpToTolerance(ComparisonUtils.MetricComparator comparator, ModelMetrics other) {
+    super.isEqualUpToTolerance(comparator, other);
+    ModelMetricsBinomial specificOther = (ModelMetricsBinomial)other;
+
+    comparator.compareUpToTolerance("auc", this.auc(), specificOther.auc());
+    comparator.compareUpToTolerance("pr_auc", this.pr_auc(), specificOther.pr_auc());
+    comparator.compareUpToTolerance("logloss", this.logloss(), specificOther.logloss());
+    comparator.compareUpToTolerance("mean_per_class_error", this.mean_per_class_error(), specificOther.mean_per_class_error());
+    comparator.compareUpToTolerance("cm", this.cm(), specificOther.cm());
+    comparator.compareUpToTolerance("gains_lift", this.gainsLift(), specificOther.gainsLift());
+    if (this.gainsLift() != null && specificOther.gainsLift() != null) {
+      comparator.compareUpToTolerance("lift_top_group", this.lift_top_group(), specificOther.lift_top_group());
+    }
+
+    return comparator.isEqual();
+  }
+
+    /**
    * Build a Binomial ModelMetrics object from target-class probabilities, from actual labels, and a given domain for both labels (and domain[1] is the target class)
    * @param targetClassProbs A Vec containing target class probabilities
    * @param actualLabels A Vec containing the actual labels (can be for fewer labels than what's in domain, since the predictions can be for a small subset of the data)
