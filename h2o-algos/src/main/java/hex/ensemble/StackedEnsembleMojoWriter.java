@@ -1,6 +1,7 @@
 package hex.ensemble;
 
 import hex.Model;
+import hex.ModelMetrics;
 import hex.MultiModelMojoWriter;
 import water.DKV;
 import water.Key;
@@ -25,7 +26,9 @@ public class StackedEnsembleMojoWriter extends MultiModelMojoWriter<StackedEnsem
         }
     }
 
-
+    @Override
+    public ModelMetrics.MetricBuilderFactory getModelBuilderFactory() { return null; }
+    
     @Override
     public String mojoVersion() {
         return "1.01";

@@ -1,5 +1,6 @@
 package hex.coxph;
 
+import hex.ModelMetrics;
 import hex.ModelMojoWriter;
 import water.rapids.ast.prims.mungers.AstGroup;
 import water.util.IcedHashMap;
@@ -33,6 +34,9 @@ public class CoxPHMojoWriter extends ModelMojoWriter<CoxPHModel, CoxPHModel.CoxP
     writekv("use_all_factor_levels", model._output.data_info._useAllFactorLevels);
     writeStrata();
   }
+
+  @Override
+  public ModelMetrics.MetricBuilderFactory getModelBuilderFactory() { return null; }
 
   private void writeStrata() throws IOException {
     final IcedHashMap<AstGroup.G, IcedInt> strataMap = model._output._strataMap;

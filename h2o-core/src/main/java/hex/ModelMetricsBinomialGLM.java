@@ -1,6 +1,7 @@
 package hex;
 
 import water.fvec.Frame;
+import water.util.ComparisonUtils;
 
 public class ModelMetricsBinomialGLM extends ModelMetricsBinomial implements GLMMetrics {
   public final long _nullDegressOfFreedom;
@@ -56,6 +57,16 @@ public class ModelMetricsBinomialGLM extends ModelMetricsBinomial implements GLM
       Math.abs(_resDev - mm._resDev) < 1e-8;
   }
 
+  @Override
+  public boolean isEqualUpToTolerance(ComparisonUtils.MetricComparator comparator, ModelMetrics other) {
+    super.isEqualUpToTolerance(comparator, other);
+    ModelMetricsBinomialGLM specificOther = (ModelMetricsBinomialGLM) other;
+    
+    GLMMetrics.compareMetricsUpToTolerance(comparator, this, specificOther);
+    
+    return comparator.isEqual();
+  }
+  
   public static class ModelMetricsMultinomialGLM extends ModelMetricsMultinomial implements GLMMetrics {
     public final long _nullDegressOfFreedom;
     public final long _residualDegressOfFreedom;
@@ -108,6 +119,16 @@ public class ModelMetricsBinomialGLM extends ModelMetricsBinomial implements GLM
         _residualDegressOfFreedom == mm._residualDegressOfFreedom &&
           _nullDegressOfFreedom     == mm._nullDegressOfFreedom     &&
           Math.abs(_resDev - mm._resDev) < 1e-8;
+    }
+
+    @Override
+    public boolean isEqualUpToTolerance(ComparisonUtils.MetricComparator comparator, ModelMetrics other) {
+      super.isEqualUpToTolerance(comparator, other);
+      ModelMetricsMultinomialGLM specificOther = (ModelMetricsMultinomialGLM) other;
+      
+      GLMMetrics.compareMetricsUpToTolerance(comparator, this, specificOther);
+      
+      return comparator.isEqual();
     }
   }
 
@@ -164,6 +185,15 @@ public class ModelMetricsBinomialGLM extends ModelMetricsBinomial implements GLM
                       _nullDegressOfFreedom     == mm._nullDegressOfFreedom     &&
                       Math.abs(_resDev - mm._resDev) < 1e-8;
     }
-  }
 
+    @Override
+    public boolean isEqualUpToTolerance(ComparisonUtils.MetricComparator comparator, ModelMetrics other) {
+      super.isEqualUpToTolerance(comparator, other);
+      ModelMetricsOrdinalGLM specificOther = (ModelMetricsOrdinalGLM) other;
+      
+      GLMMetrics.compareMetricsUpToTolerance(comparator, this, specificOther);
+      
+      return comparator.isEqual();
+    }
+  }
 }

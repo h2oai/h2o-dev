@@ -9,6 +9,7 @@ import water.fvec.Frame;
 import water.fvec.NewChunk;
 import water.fvec.Vec;
 import water.util.ArrayUtils;
+import water.util.ComparisonUtils;
 import water.util.MathUtils;
 
 public class ModelMetricsRegression extends ModelMetricsSupervised {
@@ -28,6 +29,19 @@ public class ModelMetricsRegression extends ModelMetricsSupervised {
     _mean_residual_deviance = meanResidualDeviance;
     _mean_absolute_error = mae;
     _root_mean_squared_log_error = rmsle;
+  }
+
+  @Override
+  public boolean isEqualUpToTolerance(ComparisonUtils.MetricComparator comparator, ModelMetrics other) {
+    super.isEqualUpToTolerance(comparator, other);
+    ModelMetricsRegression specificOther = (ModelMetricsRegression) other;
+
+    comparator.compareUpToTolerance("residual_deviance", this.residual_deviance(), specificOther.residual_deviance());
+    comparator.compareUpToTolerance("mean_residual_deviance", this.mean_residual_deviance(), specificOther.mean_residual_deviance());
+    comparator.compareUpToTolerance("mae", this.mae(), specificOther.mae());
+    comparator.compareUpToTolerance("rmsle", this.rmsle(), specificOther.rmsle());
+    
+    return comparator.isEqual();
   }
 
   public static ModelMetricsRegression getFromDKV(Model model, Frame frame) {
@@ -196,6 +210,68 @@ public class ModelMetricsRegression extends ModelMetricsSupervised {
         meanResDeviance = Double.NaN;
       }
       ModelMetricsRegression mm = new ModelMetricsRegression(m, f, _count, mse, weightedSigma(), mae, rmsle, meanResDeviance, _customMetric);
+      return mm;
+    }
+  }
+
+  public static class IndependentMetricBuilderRegression<T extends IndependentMetricBuilderRegression<T>> extends IndependentMetricBuilderSupervised<T> {
+    double _sumdeviance;
+    Distribution _dist;
+    double _abserror;
+    double _rmslerror;
+    public IndependentMetricBuilderRegression() {
+      super(1,null); //this will make _work = new float[2];
+    }
+    public IndependentMetricBuilderRegression(Distribution dist) {
+      super(1,null); //this will make _work = new float[2];
+      _dist=dist;
+    }
+
+    // ds[0] has the prediction and ds[1,..,N] is ignored
+    @Override public double[] perRow(double ds[], float[] yact) {return perRow(ds, yact, 1, 0);}
+    @Override public double[] perRow(double ds[], float[] yact, double w, double o) {
+      if( Float.isNaN(yact[0]) ) return ds; // No errors if   actual   is missing
+      if(ArrayUtils.hasNaNs(ds)) return ds;  // No errors if prediction has missing values (can happen for GLM)
+      if(w == 0 || Double.isNaN(w)) return ds;
+      // Compute error
+      double err = yact[0] - ds[0]; // Error: distance from the actual
+      double err_msle = Math.pow(Math.log1p(ds[0]) - Math.log1p(yact[0]),2); //Squared log error
+      _sumsqe += w*err*err;       // Squared error
+      _abserror += w*Math.abs(err);
+      _rmslerror += w*err_msle;
+      assert !Double.isNaN(_sumsqe);
+
+      // Deviance method is not supported in custom distribution
+      if(_dist != null && _dist ._family != DistributionFamily.custom) {
+        _sumdeviance += _dist.deviance(w, yact[0], ds[0]);
+      }
+
+      _count++;
+      _wcount += w;
+      _wY += w*yact[0];
+      _wYY += w*yact[0]*yact[0];
+      return ds;                // Flow coding
+    }
+
+    @Override public void reduce( T mb ) {
+      super.reduce(mb);
+      _sumdeviance += mb._sumdeviance;
+      _abserror += mb._abserror;
+      _rmslerror += mb._rmslerror;
+    }
+
+    // Having computed a MetricBuilder, this method fills in a ModelMetrics
+    public ModelMetricsRegression makeModelMetrics() {
+      double mse = _sumsqe / _wcount;
+      double mae = _abserror/_wcount; //Mean Absolute Error
+      double rmsle = Math.sqrt(_rmslerror/_wcount); //Root Mean Squared Log Error
+      double meanResDeviance = 0;
+      if(_dist != null && _dist._family != DistributionFamily.custom) {
+        meanResDeviance = _sumdeviance / _wcount; //mean residual deviance
+      } else {
+        meanResDeviance = Double.NaN;
+      }
+      ModelMetricsRegression mm = new ModelMetricsRegression(null, null, _count, mse, weightedSigma(), mae, rmsle, meanResDeviance, _customMetric);
       return mm;
     }
   }

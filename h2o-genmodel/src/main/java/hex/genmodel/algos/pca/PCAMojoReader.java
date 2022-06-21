@@ -13,7 +13,10 @@ public class PCAMojoReader extends ModelMojoReader<PCAMojoModel>{
   }
 
   @Override
-  protected void readModelData() throws IOException {
+  protected String getModelMojoReaderClassName() { return "hex.pca.PCAMojoWriter"; }
+
+  @Override
+  protected void readModelData(final boolean readModelMetadata) throws IOException {
     _model._use_all_factor_levels = readkv("use_all_factor_levels");
     _model._pca_method = readkv("pca_methods");
     _model._pca_impl = readkv("pca_impl");

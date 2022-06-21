@@ -12,7 +12,10 @@ public class SvmMojoReader extends ModelMojoReader<SvmMojoModel> {
     }
 
     @Override
-    protected void readModelData() throws IOException {
+    protected String getModelMojoReaderClassName() { return null; }
+
+    @Override
+    protected void readModelData(final boolean readModelMetadata) throws IOException {
         _model.meanImputation = readkv("meanImputation");
 
         if(_model.meanImputation) {

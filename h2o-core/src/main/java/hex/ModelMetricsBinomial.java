@@ -10,6 +10,7 @@ import water.fvec.Chunk;
 import water.fvec.Frame;
 import water.fvec.Vec;
 import water.util.ArrayUtils;
+import water.util.ComparisonUtils;
 import water.util.Log;
 import water.util.MathUtils;
 
@@ -79,7 +80,25 @@ public class ModelMetricsBinomial extends ModelMetricsSupervised {
   public double aucpr() { return auc_obj()._pr_auc; } // for compatibility with naming in ScoreKeeper.StoppingMetric annotation
   public double lift_top_group() { return gainsLift().response_rates[0] / gainsLift().avg_response_rate; }
 
-  /**
+  @Override
+  public boolean isEqualUpToTolerance(ComparisonUtils.MetricComparator comparator, ModelMetrics other) {
+    super.isEqualUpToTolerance(comparator, other);
+    ModelMetricsBinomial specificOther = (ModelMetricsBinomial)other;
+
+    comparator.compareUpToTolerance("auc", this.auc(), specificOther.auc());
+    comparator.compareUpToTolerance("pr_auc", this.pr_auc(), specificOther.pr_auc());
+    comparator.compareUpToTolerance("logloss", this.logloss(), specificOther.logloss());
+    comparator.compareUpToTolerance("mean_per_class_error", this.mean_per_class_error(), specificOther.mean_per_class_error());
+    comparator.compareUpToTolerance("cm", this.cm(), specificOther.cm());
+    comparator.compareUpToTolerance("gains_lift", this.gainsLift(), specificOther.gainsLift());
+    if (this.gainsLift() != null && specificOther.gainsLift() != null) {
+      comparator.compareUpToTolerance("lift_top_group", this.lift_top_group(), specificOther.lift_top_group());
+    }
+
+    return comparator.isEqual();
+  }
+
+    /**
    * Build a Binomial ModelMetrics object from target-class probabilities, from actual labels, and a given domain for both labels (and domain[1] is the target class)
    * @param targetClassProbs A Vec containing target class probabilities
    * @param actualLabels A Vec containing the actual labels (can be for fewer labels than what's in domain, since the predictions can be for a small subset of the data)
@@ -310,4 +329,85 @@ public class ModelMetricsBinomial extends ModelMetricsSupervised {
       return "auc = " + MathUtils.roundToNDigits(auc(),3) + ", logloss = " + _logloss / _wcount;
     }
   }
+
+    public static class IndependentMetricBuilderBinomial<T extends IndependentMetricBuilderBinomial<T>> extends IndependentMetricBuilderSupervised<T> {
+        protected double _logloss;
+        protected AUC2.AUCBuilder _auc;
+        protected DistributionFamily _distributionFamily;
+    
+        public IndependentMetricBuilderBinomial() {}
+    
+        public IndependentMetricBuilderBinomial(String[] domain, DistributionFamily distributionFamily) {
+            super(2,domain); 
+            _auc = new AUC2.AUCBuilder(AUC2.NBINS);
+            _distributionFamily = distributionFamily;
+        }
+    
+        public double auc() {return new AUC2(_auc)._auc;}
+        public double pr_auc() { return new AUC2(_auc)._pr_auc;}
+    
+        // Passed a float[] sized nclasses+1; ds[0] must be a prediction.  ds[1...nclasses-1] must be a class
+        // distribution;
+        @Override public double[] perRow(double ds[], float[] yact) {return perRow(ds, yact, 1, 0);}
+        @Override public double[] perRow(double ds[], float[] yact, double w, double o) {
+            if( Float .isNaN(yact[0]) ) return ds; // No errors if   actual   is missing
+            if(ArrayUtils.hasNaNs(ds)) return ds;  // No errors if prediction has missing values (can happen for GLM)
+            if(w == 0 || Double.isNaN(w)) return ds;
+            int iact = (int)yact[0];
+            boolean quasibinomial = (_distributionFamily == DistributionFamily.quasibinomial);
+            if (quasibinomial) {
+                if (yact[0] != 0)
+                    iact = _domain[0].equals(String.valueOf((int) yact[0])) ? 0 : 1;  // actual response index needed for confusion matrix, AUC, etc.
+                _wY += w * yact[0];
+                _wYY += w * yact[0] * yact[0];
+                // Compute error
+                double err = yact[0] - ds[iact + 1];
+                _sumsqe += w * err * err;           // Squared error
+                // Compute negative loglikelihood loss, according to https://0xdata.atlassian.net/secure/attachment/30135/30135_TMLErare.pdf Appendix C
+                _logloss += - w * (yact[0] * Math.log(Math.max(1e-15, ds[2])) + (1-yact[0]) * Math.log(Math.max(1e-15, ds[1])));
+            } else {
+                if (iact != 0 && iact != 1) return ds; // The actual is effectively a NaN
+                _wY += w * iact;
+                _wYY += w * iact * iact;
+                // Compute error
+                double err = iact + 1 < ds.length ? 1 - ds[iact + 1] : 1;  // Error: distance from predicting ycls as 1.0
+                _sumsqe += w * err * err;           // Squared error
+                // Compute log loss
+                _logloss += w * MathUtils.logloss(err);
+            }
+            _count++;
+            _wcount += w;
+            assert !Double.isNaN(_sumsqe);
+            _auc.perRow(ds[2], iact, w);
+            return ds;                // Flow coding
+        }
+    
+        @Override public void reduce( T mb ) {
+            super.reduce(mb); // sumseq, count
+            _logloss += mb._logloss;
+            _auc.reduce(mb._auc);
+        }
+    
+        @Override public ModelMetrics makeModelMetrics() {
+            double mse = Double.NaN;
+            double logloss = Double.NaN;
+            double sigma = Double.NaN;
+            final AUC2 auc;
+            if (_wcount > 0) {
+                sigma = weightedSigma();
+                mse = _sumsqe / _wcount;
+                logloss = _logloss / _wcount;
+                auc = new AUC2(_auc);
+            } else {
+                auc = new AUC2();
+            }
+            ModelMetricsBinomial mm = new ModelMetricsBinomial(null, null, _count, mse, _domain, sigma, auc,  logloss, null, _customMetric);
+            return mm;
+        }
+    
+        public String toString(){
+            if(_wcount == 0) return "empty, no rows";
+            return "auc = " + MathUtils.roundToNDigits(auc(),3) + ", logloss = " + _logloss / _wcount;
+        }
+    }
 }

@@ -2,6 +2,7 @@ package ai.h2o.targetencoding;
 
 import ai.h2o.targetencoding.TargetEncoderModel.TargetEncoderOutput;
 import ai.h2o.targetencoding.TargetEncoderModel.TargetEncoderParameters;
+import hex.ModelMetrics;
 import hex.ModelMojoWriter;
 import water.fvec.Frame;
 import water.fvec.Vec;
@@ -38,6 +39,9 @@ public class TargetEncoderMojoWriter extends ModelMojoWriter<TargetEncoderModel,
     writeTargetEncodingInfo();
     writeTargetEncodingMap();
   }
+
+  @Override
+  public ModelMetrics.MetricBuilderFactory getModelBuilderFactory() { return null; }
 
   /**
    * Writes target encoding's extra info

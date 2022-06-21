@@ -696,6 +696,22 @@ public class GLMModel extends Model<GLMModel,GLMModel.GLMParameters,GLMModel.GLM
       negativebinomial(Link.log);
       public final Link defaultLink;
       Family(Link link){defaultLink = link;}
+      
+      public DistributionFamily toDistributionFamily() {
+        switch (this) {
+          case AUTO: return DistributionFamily.AUTO;
+          case gaussian: return DistributionFamily.gaussian;
+          case binomial: return DistributionFamily.bernoulli;
+          case fractionalbinomial: return DistributionFamily.fractionalbinomial;
+          case quasibinomial: return DistributionFamily.quasibinomial;
+          case poisson: return DistributionFamily.poisson;
+          case gamma: return DistributionFamily.gamma;
+          case multinomial: return DistributionFamily.multinomial;
+          case tweedie: return DistributionFamily.tweedie;
+          case ordinal: return DistributionFamily.ordinal;
+          default: throw new UnsupportedOperationException("There is no equivalent value in DistributionFamily for Family value: " + this.toString());
+        }
+      }
     }
     
     public enum DispersionMethod {pearson, ml} // methods used to estimate dispersion parameter, ML = maximum likelhood

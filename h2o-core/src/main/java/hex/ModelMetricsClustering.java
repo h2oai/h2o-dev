@@ -6,6 +6,7 @@ import water.Key;
 import water.exceptions.H2OIllegalArgumentException;
 import water.fvec.Frame;
 import water.util.ArrayUtils;
+import water.util.ComparisonUtils;
 import water.util.TwoDimTable;
 
 import java.util.ArrayList;
@@ -41,6 +42,20 @@ public class ModelMetricsClustering extends ModelMetricsUnsupervised {
     if (_size != null) sb.append(" per cluster sizes: " + Arrays.toString(_size) + "\n");
     if (_withinss != null) sb.append(" per cluster within sum of squares: " + Arrays.toString(_withinss) + "\n");
     return sb.toString();
+  }
+
+  @Override
+  public boolean isEqualUpToTolerance(ComparisonUtils.MetricComparator comparator, ModelMetrics other) {
+    super.isEqualUpToTolerance(comparator, other);
+    ModelMetricsClustering specificOther = (ModelMetricsClustering) other;
+
+    comparator.compareUpToTolerance("totss", this.totss(), specificOther.totss());
+    comparator.compareUpToTolerance("tot_withinss", this.tot_withinss(), specificOther.tot_withinss());
+    comparator.compareUpToTolerance("betweenss", this.betweenss(), specificOther.betweenss());
+    comparator.compare("size", this._size, specificOther._size);
+    comparator.compareUpToTolerance("withinss", this._withinss, specificOther._withinss);
+            
+    return comparator.isEqual();
   }
 
   /**
@@ -177,6 +192,97 @@ public class ModelMetricsClustering extends ModelMetricsUnsupervised {
       mm._withinss = new double[_size.length];
       for (int i = 0; i < mm._withinss.length; i++)
         mm._withinss[i] = _within_sumsqe[i];
+    }
+  }
+
+  public static class IndependentMetricBuilderClustering extends IndependentMetricBuilderUnsupervised<IndependentMetricBuilderClustering> {
+    public long[] _size;        // Number of elements in cluster
+    public double[] _within_sumsqe;   // Within-cluster sum of squared error
+    private double[/*features*/] _colSum;  // Sum of each column
+    private double[/*features*/] _colSumSq;  // Sum of squared values of each column
+    private double[/*k*/][/*features*/] _centers;
+    private int[] _mode;
+    private int _k;
+
+    public IndependentMetricBuilderClustering() {}
+            
+    public IndependentMetricBuilderClustering(
+        int ncol,
+        int k,
+        double[][] centers,
+        int[] mode) {
+      _work = new double[ncol];
+      _size = new long[k];
+      _within_sumsqe = new double[k];
+      Arrays.fill(_size, 0);
+      Arrays.fill(_within_sumsqe, 0);
+      _colSum = new double[ncol];
+      _colSumSq = new double[ncol];
+      Arrays.fill(_colSum, 0);
+      Arrays.fill(_colSumSq, 0);
+      _centers = centers;
+      _mode = mode;
+      _k = k;
+    }
+
+    // Compare row (dataRow) against centroid it was assigned to (preds[0])
+    @Override
+    public double[] perRow(double[] preds, float[] dataRow) {
+      assert !Double.isNaN(preds[0]);
+      
+
+      int clus = (int)preds[0];
+      double [] colSum = new double[_colSum.length];
+      double [] colSumSq = new double[_colSumSq.length];
+      double sqr = hex.genmodel.GenModel.KMeans_distance(_centers[clus], dataRow, _mode, colSum, colSumSq);
+      // System.out.println(Arrays.toString(colSumSq));
+      ArrayUtils.add(_colSum, colSum);
+      ArrayUtils.add(_colSumSq, colSumSq);
+      _count++;
+      _size[clus]++;
+      _sumsqe += sqr;
+      _within_sumsqe[clus] += sqr;
+
+      if (Double.isNaN(_sumsqe))
+        throw new H2OIllegalArgumentException("Sum of Squares is invalid (Double.NaN) - Check for missing values in the dataset.");
+      return preds;                // Flow coding
+    }
+
+    @Override
+    public void reduce(IndependentMetricBuilderClustering mm) {
+      super.reduce(mm);
+      ArrayUtils.add(_size, mm._size);
+      ArrayUtils.add(_within_sumsqe, mm._within_sumsqe);
+      ArrayUtils.add(_colSum, mm._colSum);
+      ArrayUtils.add(_colSumSq, mm._colSumSq);
+    }
+
+    @Override
+    public ModelMetrics makeModelMetrics() {
+      ModelMetricsClustering mm = new ModelMetricsClustering(null, null, _customMetric);
+
+      mm._size = _size;
+      mm._tot_withinss = _sumsqe;
+      mm._withinss = new double[_size.length];
+      for (int i = 0; i < mm._withinss.length; i++)
+        mm._withinss[i] = _within_sumsqe[i];
+
+      long numRows = _count;
+
+      // Sum-of-square distance from grand mean
+      if (_k == 1)
+        mm._totss = mm._tot_withinss;
+      else {
+        mm._totss = 0;
+        for (int i = 0; i < _colSum.length; i++) {
+          if (_mode[i] == -1)
+            mm._totss += _colSumSq[i] - (_colSum[i] * _colSum[i]) / numRows;
+          else
+            mm._totss += _colSum[i]; // simply add x[i] != modes[i] for categoricals
+        }
+      }
+      mm._betweenss = mm._totss - mm._tot_withinss;
+      return mm;
     }
   }
 }

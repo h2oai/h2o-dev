@@ -1,6 +1,7 @@
 package hex.gam;
 
 
+import hex.ModelMetrics;
 import hex.ModelMojoWriter;
 import hex.glm.GLMModel;
 
@@ -106,7 +107,12 @@ public class GAMMojoWriter extends ModelMojoWriter<GAMModel, GAMModel.GAMParamet
     if (model._cubicSplineNum > 0)
       write3DArray(model._output._binvD, "_binvD");
   }
-  
+
+  @Override
+  public ModelMetrics.MetricBuilderFactory getModelBuilderFactory() {
+    return new GAMMetricBuilderFactory();
+  }
+
   public int[] genGamColumnDim(String[][] gamColumnNames) {
     int numGamCols = gamColumnNames.length;
     int[] gamColDim = new int[numGamCols];

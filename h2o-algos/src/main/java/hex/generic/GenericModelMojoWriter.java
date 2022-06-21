@@ -1,5 +1,6 @@
 package hex.generic;
 
+import hex.ModelMetrics;
 import hex.ModelMojoWriter;
 import hex.genmodel.utils.IOUtils;
 import water.api.StreamWriteOption;
@@ -30,6 +31,9 @@ public class GenericModelMojoWriter extends ModelMojoWriter<GenericModel, Generi
     protected void writeModelData() throws IOException {
         // Do nothing on purpose
     }
+
+    @Override
+    public ModelMetrics.MetricBuilderFactory getModelBuilderFactory() { return null; }
 
     @Override
     public void writeTo(final OutputStream os, StreamWriteOption... options) {

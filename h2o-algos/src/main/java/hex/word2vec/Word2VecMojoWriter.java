@@ -1,5 +1,6 @@
 package hex.word2vec;
 
+import hex.ModelMetrics;
 import hex.ModelMojoWriter;
 import water.MemoryManager;
 import water.parser.BufferedString;
@@ -41,5 +42,7 @@ public class Word2VecMojoWriter extends ModelMojoWriter<Word2VecModel, Word2VecM
       bb.putFloat(v);
     writeblob("vectors", bb.array());
   }
-
+  
+  @Override
+  public ModelMetrics.MetricBuilderFactory getModelBuilderFactory() { return null; }
 }

@@ -8,6 +8,7 @@ import water.fvec.Chunk;
 import water.fvec.Frame;
 import water.fvec.Vec;
 import water.util.ArrayUtils;
+import water.util.ComparisonUtils;
 import water.util.MathUtils;
 import water.util.TwoDimTable;
 
@@ -47,6 +48,19 @@ public class ModelMetricsOrdinal extends ModelMetricsSupervised {
   public double mean_per_class_error() { return _mean_per_class_error; }
   @Override public ConfusionMatrix cm() { return _cm; }
   @Override public float[] hr() { return _hit_ratios; }
+
+  @Override
+  public boolean isEqualUpToTolerance(ComparisonUtils.MetricComparator comparator, ModelMetrics other) {
+    super.isEqualUpToTolerance(comparator, other);
+    ModelMetricsOrdinal specificOther = (ModelMetricsOrdinal) other;
+
+    comparator.compareUpToTolerance("logloss", this.logloss(), specificOther.logloss());
+    comparator.compareUpToTolerance("mean_per_class_error", this.mean_per_class_error(), specificOther.mean_per_class_error());
+    comparator.compareUpToTolerance("hr", this.hr(), specificOther.hr());
+    comparator.compareUpToTolerance("cm", this.cm(), specificOther.cm());
+    
+    return comparator.isEqual();
+  }
 
   public static ModelMetricsOrdinal getFromDKV(Model model, Frame frame) {
     ModelMetrics mm = ModelMetrics.getFromDKV(model, frame);
@@ -238,6 +252,83 @@ public class ModelMetricsOrdinal extends ModelMetricsSupervised {
       ModelMetricsOrdinal mm = new ModelMetricsOrdinal(m, f, _count, mse, _domain, sigma, cm,
                                                                hr, logloss, _customMetric);
       if (m!=null) m.addModelMetrics(mm);
+      return mm;
+    }
+  }
+
+  public static class IndependentMetricBuilderOrdinal<T extends IndependentMetricBuilderOrdinal<T>> extends IndependentMetricBuilderSupervised<T> {
+    double[/*nclasses*/][/*nclasses*/] _cm;
+    double[/*K*/] _hits;            // the number of hits for hitratio, length: K
+    int _K;               // TODO: Let user set K
+    double _logloss;
+    transient double[] _priorDistribution;
+
+    public IndependentMetricBuilderOrdinal() {}
+
+    public IndependentMetricBuilderOrdinal( int nclasses, String[] domain, double[] priorDistribution) {
+      super(nclasses,domain);
+      _cm = domain.length > ConfusionMatrix.maxClasses() ? null : new double[domain.length][domain.length];
+      _K = Math.min(10,_nclasses);
+      _hits = new double[_K];
+      _priorDistribution = priorDistribution;
+    }
+    
+    // Passed a float[] sized nclasses+1; ds[0] must be a prediction.  ds[1...nclasses-1] must be a class
+    // distribution;
+    @Override public double[] perRow(double ds[], float[] yact) { return perRow(ds, yact, 1, 0); }
+    @Override public double[] perRow(double ds[], float[] yact, double w, double o) {
+      if (_cm == null) return ds;
+      if( Float .isNaN(yact[0]) ) return ds; // No errors if   actual   is missing
+      if(ArrayUtils.hasNaNs(ds)) return ds;
+      if(w == 0 || Double.isNaN(w)) return ds;
+      final int iact = (int)yact[0];
+      _count++;
+      _wcount += w;
+      _wY += w*iact;
+      _wYY += w*iact*iact;
+
+      // Compute error
+      double err = iact+1 < ds.length ? 1-ds[iact+1] : 1;  // Error: distance from predicting ycls as 1.0
+      _sumsqe += w*err*err;        // Squared error
+      assert !Double.isNaN(_sumsqe);
+
+      // Plain Olde Confusion Matrix
+      _cm[iact][(int)ds[0]]++; // actual v. predicted
+
+      // Compute hit ratio
+      if( _K > 0 && iact < ds.length-1)
+        updateHits(w,iact,ds,_hits,_priorDistribution);
+
+      // Compute log loss
+      _logloss += w*MathUtils.logloss(err);
+      return ds;                // Flow coding
+    }
+
+    @Override public void reduce( T mb ) {
+      if (_cm == null) return;
+      super.reduce(mb);
+      assert mb._K == _K;
+      ArrayUtils.add(_cm, mb._cm);
+      _hits = ArrayUtils.add(_hits, mb._hits);
+      _logloss += mb._logloss;
+    }
+    
+    @Override public ModelMetrics makeModelMetrics() {
+      double mse = Double.NaN;
+      double logloss = Double.NaN;
+      float[] hr = new float[_K];
+      ConfusionMatrix cm = new ConfusionMatrix(_cm, _domain);
+      double sigma = weightedSigma();
+      if (_wcount > 0) {
+        if (_hits != null) {
+          for (int i = 0; i < hr.length; i++) hr[i] = (float) (_hits[i] / _wcount);
+          for (int i = 1; i < hr.length; i++) hr[i] += hr[i - 1];
+        }
+        mse = _sumsqe / _wcount;
+        logloss = _logloss / _wcount;
+      }
+      ModelMetricsOrdinal mm = new ModelMetricsOrdinal(null, null, _count, mse, _domain, sigma, cm,
+              hr, logloss, _customMetric);
       return mm;
     }
   }

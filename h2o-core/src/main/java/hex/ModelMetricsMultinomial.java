@@ -7,10 +7,7 @@ import water.exceptions.H2OIllegalArgumentException;
 import water.fvec.Chunk;
 import water.fvec.Frame;
 import water.fvec.Vec;
-import water.util.ArrayUtils;
-import water.util.Log;
-import water.util.MathUtils;
-import water.util.TwoDimTable;
+import water.util.*;
 
 import java.util.Arrays;
 
@@ -82,7 +79,21 @@ public class ModelMetricsMultinomial extends ModelMetricsSupervised {
   public double aucpr(){
     return pr_auc();
   }
-  
+
+  @Override
+  public boolean isEqualUpToTolerance(ComparisonUtils.MetricComparator comparator, ModelMetrics other) {
+    super.isEqualUpToTolerance(comparator, other);
+    ModelMetricsMultinomial specificOther = (ModelMetricsMultinomial) other;
+
+    comparator.compareUpToTolerance("auc", this.auc(), specificOther.auc());
+    comparator.compareUpToTolerance("pr_auc", this.pr_auc(), specificOther.pr_auc());
+    comparator.compareUpToTolerance("logloss", this.logloss(), specificOther.logloss());
+    comparator.compareUpToTolerance("mean_per_class_error", this.mean_per_class_error(), specificOther.mean_per_class_error());
+    comparator.compareUpToTolerance("hr", this.hr(), specificOther.hr());
+    comparator.compareUpToTolerance("cm", this.cm(), specificOther.cm());
+
+    return comparator.isEqual();
+  }
 
   public static ModelMetricsMultinomial getFromDKV(Model model, Frame frame) {
     ModelMetrics mm = ModelMetrics.getFromDKV(model, frame);
@@ -365,6 +376,145 @@ public class ModelMetricsMultinomial extends ModelMetricsSupervised {
       ModelMetricsMultinomial mm = new ModelMetricsMultinomial(m, f, _count, mse, _domain, sigma, cm,
                                                                hr, logloss, auc, _customMetric);
       if (m!=null) m.addModelMetrics(mm);
+      return mm;
+    }
+  }
+
+  public static class IndependentMetricBuilderMultinomial<T extends IndependentMetricBuilderMultinomial<T>> extends IndependentMetricBuilderSupervised<T> {
+    double[/*nclasses*/][/*nclasses*/] _cm;
+    double[/*K*/] _hits;            // the number of hits for hitratio, length: K
+    int _K;               // TODO: Let user set K
+    double _logloss;
+    boolean _calculateAuc;
+    AUC2.AUCBuilder[/*nclasses*/][/*nclasses*/] _ovoAucs;
+    AUC2.AUCBuilder[/*nclasses*/] _ovrAucs;
+    MultinomialAucType _aucType;
+    transient double[] _priorDistribution;
+
+    public IndependentMetricBuilderMultinomial() {}
+
+    public IndependentMetricBuilderMultinomial(int nclasses, String[] domain, MultinomialAucType aucType, double[] priorDistribution) {
+      super(nclasses,domain);
+      _priorDistribution = priorDistribution;
+      int domainLength = domain.length;
+      _cm = domain.length > ConfusionMatrix.maxClasses() ? null : new double[domainLength][domainLength];
+      _K = Math.min(10,_nclasses);
+      _hits = new double[_K];
+      // matrix for pairwise AUCs
+      _aucType = aucType;
+      _calculateAuc = !_aucType.equals(MultinomialAucType.NONE) && !_aucType.equals(MultinomialAucType.AUTO) && domainLength <= MultinomialAUC.MAX_AUC_CLASSES;
+      if(_calculateAuc) {
+        _ovoAucs = new AUC2.AUCBuilder[domainLength][domainLength];
+        _ovrAucs = new AUC2.AUCBuilder[domainLength];
+        for (int i = 0; i < domainLength; i++) {
+          _ovrAucs[i] = new AUC2.AUCBuilder(AUC2.NBINS);
+          for (int j = 0; j < domainLength; j++) {
+            // diagonal is not used
+            if (i != j) {
+              _ovoAucs[i][j] = new AUC2.AUCBuilder(AUC2.NBINS);
+            }
+          }
+        }
+      }
+    }
+    
+    // Passed a float[] sized nclasses+1; ds[0] must be a prediction.  ds[1...nclasses-1] must be a class
+    // distribution;
+    @Override public double[] perRow(double ds[], float[] yact) { return perRow(ds, yact, 1, 0); }
+    @Override public double[] perRow(double ds[], float[] yact, double w, double o) {
+      if (_cm == null) return ds;
+      if( Float .isNaN(yact[0]) ) return ds; // No errors if   actual   is missing
+      if(ArrayUtils.hasNaNs(ds)) return ds;
+      if(w == 0 || Double.isNaN(w)) return ds;
+      final int iact = (int)yact[0];
+      _count++;
+      _wcount += w;
+      _wY += w*iact;
+      _wYY += w*iact*iact;
+
+      // Compute error
+      double err = iact+1 < ds.length ? 1-ds[iact+1] : 1;  // Error: distance from predicting ycls as 1.0
+      _sumsqe += w*err*err;        // Squared error
+      assert !Double.isNaN(_sumsqe);
+
+      assert iact < _cm.length : "iact = " + iact + "; _cm.length = " + _cm.length;
+      assert (int)ds[0] < _cm.length :  "ds[0] = " + ds[0] + "; _cm.length = " + _cm.length;
+      // Plain Olde Confusion Matrix
+      _cm[iact][(int)ds[0]]++; // actual v. predicted
+
+      // Compute hit ratio
+      if( _K > 0 && iact < ds.length-1)
+        updateHits(w,iact,ds,_hits,_priorDistribution);
+
+      // Compute log loss
+      _logloss += w*MathUtils.logloss(err);
+
+      // compute multinomial pairwise AUCs
+      if(_calculateAuc) {
+        calculateAucsPerRow(ds, iact, w);
+      }
+      return ds;                // Flow coding
+    }
+
+    private void calculateAucsPerRow(double ds[], int iact, double w){
+      if (iact >= _domain.length) {
+        iact = _domain.length - 1;
+      }
+      for(int i = 0; i < _domain.length; i++){
+        // diagonal is empty
+        double p1 = 0, p2 = 0;
+        if(i < ds.length-1){
+          p1 = ds[i+1];
+        }
+        if(iact < ds.length-1){
+          p2 = ds[iact+1];
+        }
+        if(i != iact) {
+          _ovoAucs[iact][i].perRow(p1, 0, w);
+          _ovoAucs[i][iact].perRow(p2, 1, w);
+          _ovrAucs[i].perRow(p1, 0, w);
+        } else {
+          _ovrAucs[iact].perRow(p2, 1, w);
+        }
+      }
+    }
+
+    @Override public void reduce( T mb ) {
+      if (_cm == null) return;
+      super.reduce(mb);
+      assert mb._K == _K;
+      ArrayUtils.add(_cm, mb._cm);
+      _hits = ArrayUtils.add(_hits, mb._hits);
+      _logloss += mb._logloss;
+      if(_calculateAuc) {
+        for (int i = 0; i < _ovoAucs.length; i++) {
+          _ovrAucs[i].reduce(mb._ovrAucs[i]);
+          for (int j = 0; j < _ovoAucs[0].length; j++) {
+            if (i != j) {
+              _ovoAucs[i][j].reduce(mb._ovoAucs[i][j]);
+            }
+          }
+        }
+      }
+    }
+
+    @Override public ModelMetrics makeModelMetrics() {
+      double mse = Double.NaN;
+      double logloss = Double.NaN;
+      float[] hr = new float[_K];
+      ConfusionMatrix cm = new ConfusionMatrix(_cm, _domain);
+      double sigma = weightedSigma();
+      if(_wcount > 0){
+        if (_hits != null) {
+          for (int i = 0; i < hr.length; i++) hr[i] = (float) (_hits[i] / _wcount);
+          for (int i = 1; i < hr.length; i++) hr[i] += hr[i - 1];
+        }
+        mse = _sumsqe / _wcount;
+        logloss = _logloss / _wcount;
+      }
+      MultinomialAUC auc = new MultinomialAUC(_ovrAucs,_ovoAucs, _domain, _wcount == 0, _aucType);
+      ModelMetricsMultinomial mm = new ModelMetricsMultinomial(null, null, _count, mse, _domain, sigma, cm,
+              hr, logloss, auc, _customMetric);
       return mm;
     }
   }

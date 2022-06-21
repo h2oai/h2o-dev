@@ -1,5 +1,10 @@
 package hex;
 
+import com.google.gson.JsonObject;
+import hex.genmodel.IMetricBuilder;
+import hex.genmodel.IMetricBuilderFactory;
+import hex.genmodel.ModelMojoReader;
+import hex.genmodel.MojoModel;
 import water.*;
 import water.exceptions.H2OIllegalArgumentException;
 import water.exceptions.H2OKeyNotFoundArgumentException;
@@ -114,6 +119,14 @@ public class ModelMetrics extends Keyed<ModelMetrics> {
   public ConfusionMatrix cm() { return null; }
   public float[] hr() { return null; }
   public AUC2 auc_obj() { return null; }
+  
+  public boolean isEqualUpToTolerance(ComparisonUtils.MetricComparator comparator, ModelMetrics other) {
+    comparator.compareUpToTolerance("mse", this.mse(), other.mse());
+    comparator.compareUpToTolerance("rmse", this.rmse(), other.rmse());
+    comparator.compare("nobs", this._nobs, other._nobs);
+      
+    return comparator.isEqual();
+  }
 
   public static ModelMetrics defaultModelMetrics(Model model) {
     return model._output._cross_validation_metrics != null ? model._output._cross_validation_metrics
@@ -457,7 +470,7 @@ public class ModelMetrics extends Keyed<ModelMetrics> {
      *@param preds Predictions of m on f (optional)  @return Filled Model Metrics object
      */
     public abstract ModelMetrics makeModelMetrics(Model m, Frame f, Frame adaptedFrame, Frame preds);
-
+    
     /**
      * Set value of custom metric.
      * @param customMetric  computed custom metric outside of this default builder
@@ -473,5 +486,93 @@ public class ModelMetrics extends Keyed<ModelMetrics> {
     public void cachePrediction(double[] cdist, Chunk[] chks, int row, int cacheChunkIdx, Model m) {
       throw new UnsupportedOperationException("Should be overridden in implementation (together with makePredictionCache(..)).");
     }
+  }
+  
+  public static abstract class IndependentMetricBuilder<T extends IndependentMetricBuilder<T>> 
+      extends Iced<T> implements IMetricBuilder<T> {
+    transient public double[] _work;
+    public double _sumsqe;      // Sum-squared-error
+    public long _count;
+    public double _wcount;
+    public double _wY; // (Weighted) sum of the response
+    public double _wYY; // (Weighted) sum of the squared response
+
+    // Custom metric holder
+    public CustomMetric _customMetric = null;
+
+    public  double weightedSigma() {
+//      double sampleCorrection = _count/(_count-1); //sample variance -> depends on the number of ACTUAL ROWS (not the weighted count)
+      double sampleCorrection = 1; //this will make the result (and R^2) invariant to globally scaling the weights
+      return _count <= 1 ? 0 : Math.sqrt(sampleCorrection*(_wYY/_wcount - (_wY*_wY)/(_wcount*_wcount)));
+    }
+    
+    public double[] perRow(double[] ds, double[] yact) {
+      return perRow(ds, double2float(yact));
+    }
+
+    public double[] perRow(double[] ds, double[] yact, double weight, double offset) {
+      return perRow(ds, double2float(yact), weight, offset);
+    }
+    
+    abstract public double[] perRow(double[] ds, float[] yact);
+    
+    public double[] perRow(double[] ds, float[] yact, double weight, double offset) {
+      assert(weight==1 && offset == 0);
+      return perRow(ds, yact);
+    }
+    
+    protected float[] double2float(double[] input) {
+      if (input == null) return null;
+      float[] output = new float[input.length];
+      for (int i = 0; i < input.length; i++) {
+        output[i] = (float)input[i];
+      }
+      return output;
+    }
+
+    protected double[] float2double(float[] input) {
+      if (input == null) return null;
+      double[] output = new double[input.length];
+      for (int i = 0; i < input.length; i++) {
+        output[i] = (double) input[i];
+      }
+      return output;
+    }
+
+    public void reduce(Object mb) {
+      reduce((T)mb);
+    }
+    
+    public void reduce(T mb) {
+      _sumsqe += mb._sumsqe;
+      _count += mb._count;
+      _wcount += mb._wcount;
+      _wY += mb._wY;
+      _wYY += mb._wYY;
+    }
+
+    public void postGlobal() {
+      postGlobal(null);
+    }
+
+    public void postGlobal(CustomMetric customMetric) {
+      this._customMetric = customMetric;
+    }
+    
+    public abstract ModelMetrics makeModelMetrics();
+
+    /**
+     * Set value of custom metric.
+     * @param customMetric  computed custom metric outside of this default builder
+     */
+    public void setCustomMetric(CustomMetric customMetric) {
+      _customMetric = customMetric;
+    }
+  }
+  
+  public static abstract class MetricBuilderFactory<TBinaryModel extends Model, TMojoModel extends MojoModel>
+    implements IMetricBuilderFactory<TMojoModel> {
+    
+    public Object extractExtraInfo(TBinaryModel binaryModel) { return null; }
   }
 }
