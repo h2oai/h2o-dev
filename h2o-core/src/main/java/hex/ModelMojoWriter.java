@@ -1,6 +1,7 @@
 package hex;
 
 import hex.genmodel.AbstractMojoWriter;
+import water.Key;
 import water.api.SchemaServer;
 import water.api.StreamWriteOption;
 import water.api.StreamWriter;
@@ -81,6 +82,14 @@ public abstract class ModelMojoWriter<M extends Model<M, P, O>, P extends Model.
     }
   }
 
+  @Override
+  protected final void writeModelKV() throws IOException {
+    if (model._parms._dataTransformers != null) {
+      writekv("transformers_count", model._parms._dataTransformers.length);
+    }
+    writeModelData();
+  }
+  
   protected abstract void writeModelData() throws IOException;
 
   @Override
@@ -88,7 +97,18 @@ public abstract class ModelMojoWriter<M extends Model<M, P, O>, P extends Model.
     super.writeExtraInfo();
     writeModelDetails();
     writeModelDetailsReadme();
+    writeDataTransformers();
   }
+  
+  protected void writeDataTransformers() throws IOException {
+    if (model._parms._dataTransformers == null) return;
+    for (int i = 0; i < model._parms._dataTransformers.length; i++) {
+      Key<DataTransformer> key = model._parms._dataTransformers[i];
+      DataTransformer mp = key.get();
+      writemodel("transformers/transformer_"+i+"/", mp.asModel().getMojo());
+    }
+  }
+
 
   /** Create file that contains model details in JSON format.
    * This information is pulled from the models schema.
